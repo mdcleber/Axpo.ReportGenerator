@@ -34,13 +34,38 @@ namespace Axpo.ReportGenerator
 
         private async Task RunExtract(string folderPath, int intervalMinutes, CancellationToken stoppingToken)
         {
+            var maximumAttempts = _configuration.GetMaximumAttempts();
+            var x = 0;
+            do
+            {
+                if (await TryGenerateReport(folderPath))
+                {
+                    x = maximumAttempts;
+                }
+                else
+                {
+                    x++;
+                }
+            }
+            while (x < maximumAttempts);
+
+
+            TimeSpan timeToNextExtract = TimeSpan.FromMinutes(intervalMinutes);
+            _logger.LogInformation("Next execution scheduled to {}", DateTime.Now.Add(timeToNextExtract).ToString("yyyy-MM-dd HH:mm"));
+
+            await Task.Delay(timeToNextExtract, stoppingToken);
+        }
+
+        protected async Task<bool> TryGenerateReport(string folderPath)
+        {
             try
             {
                 DateTime now = DateTime.UtcNow;
                 DateTime localStartTime = new DateTime(now.Year, now.Month, now.Day, 23, 0, 0, DateTimeKind.Utc);
-
                 IEnumerable<TradesConsolidated> consolidatedTrades = await _tradesAggregator.GetTradesAsync(localStartTime);
+
                 await _reportGenerator.CreateReport(folderPath, consolidatedTrades);
+                return true;
             }
             catch (PowerServiceException ex)
             {
@@ -51,10 +76,8 @@ namespace Axpo.ReportGenerator
                 _logger.LogInformation("Unexpected error. Message: {}", ex.Message);
             }
 
-            TimeSpan timeToNextExtract = TimeSpan.FromMinutes(intervalMinutes);
-            _logger.LogInformation("Next execution scheduled to {}", DateTime.Now.Add(timeToNextExtract).ToString("yyyy-MM-dd HH:mm"));
+            return false;
 
-            await Task.Delay(timeToNextExtract > TimeSpan.Zero ? timeToNextExtract : TimeSpan.Zero, stoppingToken);
         }
     }
 }

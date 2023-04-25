@@ -4,5 +4,6 @@
     {
         string GetResultPath();
         int GetExecutionInterval();
+        int GetMaximumAttempts();
     }
 }
