@@ -13,35 +13,22 @@ namespace Axpo.ReportGenerator.Services
             _powerService = powerService;
             _logger = logger;
         }
-        public async Task<IEnumerable<TradesConsolidated>> GetTradesAsync(DateTime localStartTime)
+        public async Task<IEnumerable<TradesConsolidated>> GetTradesAsync(DateTime utcTimeZone)
         {
-            IEnumerable<PowerTrade> trades = new List<PowerTrade>();
+            IEnumerable<PowerTrade> trades = trades = await _powerService.GetTradesAsync(utcTimeZone);
 
-            _logger.LogInformation("Searching trading list");
-            trades = await _powerService.GetTradesAsync(localStartTime);
-
-
-            _logger.LogInformation("Aggregating transactions by Period");
-            Dictionary<int, TradesConsolidated> tradesByPeriod = new Dictionary<int, TradesConsolidated>();
-
-            foreach (PowerTrade trade in trades)
-            {
-                foreach (PowerPeriod period in trade.Periods)
+            return trades.SelectMany(trade => trade.Periods)
+                .GroupBy(period => period.Period)
+                .Select(aggregated =>
                 {
-                    int hour = period.Period - 1;
-                    if (!tradesByPeriod.ContainsKey(hour))
+                    int hour = aggregated.Key - 1;
+                    DateTime localDateTime = utcTimeZone.AddHours(hour);
+                    return new TradesConsolidated
                     {
-                        var tradeModel = new TradesConsolidated();
-                        tradeModel.LocalTime = localStartTime.AddHours(hour).ToString("HH:mm", CultureInfo.InvariantCulture);
-                        tradesByPeriod.Add(hour, tradeModel);
-
-                    }
-
-                    tradesByPeriod[hour].Volume += period.Volume;
-                }
-            }
-
-            return tradesByPeriod.Values;
+                        LocalTime = localDateTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                        Volume = aggregated.Sum(x => x.Volume)
+                    };
+                });
         }
     }
 }
